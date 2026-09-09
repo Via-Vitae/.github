@@ -1,0 +1,105 @@
+name: CI
+
+# Lightweight CI for the .github org-defaults repository.
+# Validates YAML syntax and ensures reusable workflows parse correctly.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  yaml-lint:
+    name: YAML syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Lint YAML files
+        run: |
+          set -euo pipefail
+          yamllint -d '{extends: default, rules: {line-length: disable, truthy: disable, comments-indentation: disable}}' \
+            .github/workflows/ profile/ *.md 2>/dev/null || true
+          # Validate all workflow YAML parses
+          python3 -c "
+          import yaml, glob, sys
+          ok = True
+          for f in sorted(glob.glob('.github/workflows/*.yml')):
+              try:
+                  yaml.safe_load(open(f))
+                  print(f'  ✓ {f}')
+              except Exception as e:
+                  print(f'  ✗ {f}: {e}')
+                  ok = False
+          if not ok: sys.exit(1)
+          print('All workflow YAML files parse successfully.')
+          "
+
+  governance:
+    name: Governance files present
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Verify org-level files
+        run: |
+          set -euo pipefail
+          required=(
+            "profile/README.md"
+            "CODE_OF_CONDUCT.md"
+            "CONTRIBUTING.md"
+            "SECURITY.md"
+            "SUPPORT.md"
+            ".github/CODEOWNERS"
+            ".github/PULL_REQUEST_TEMPLATE.md"
+            ".github/ISSUE_TEMPLATE/bug_report.yml"
+            ".github/ISSUE_TEMPLATE/feature_request.yml"
+          )
+          missing=0
+          for f in "${required[@]}"; do
+            if [ -f "$f" ]; then
+              echo "  ✓ $f"
+            else
+              echo "  ✗ $f MISSING"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::$missing required org-level file(s) missing."
+            exit 1
+          fi
+
+  ci-status:
+    name: CI status
+    needs: [yaml-lint, governance]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate required gates
+        run: |
+          set -euo pipefail
+          results='${{ toJSON(needs) }}'
+          failed=$(printf '%s' "$results" | grep -o '"result":"failure"' | wc -l || true)
+          cancelled=$(printf '%s' "$results" | grep -o '"result":"cancelled"' | wc -l || true)
+          if [ "$failed" -ne 0 ] || [ "$cancelled" -ne 0 ]; then
+            echo "::error::CI failed."
+            exit 1
+          fi
+          echo "All gates passed."

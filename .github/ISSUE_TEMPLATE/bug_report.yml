@@ -1,0 +1,63 @@
+name: Bug Report
+description: Report a defect in a ViaVitae repository
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. Please complete all sections so we can triage promptly.
+        **Do not include personal data, credentials or customer information.**
+  - type: input
+    id: repository
+    attributes:
+      label: Repository
+      description: Which repository is affected?
+      placeholder: viavitae-infra
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit SHA
+      placeholder: main @ abc1234
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear, concise description of the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste logs or drag in images. Redact any sensitive data first.
+    validations:
+      required: false
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have searched for an existing report of this issue.
+          required: true
+        - label: I have not included any personal data or credentials.
+          required: true

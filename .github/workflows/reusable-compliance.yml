@@ -1,0 +1,241 @@
+name: Reusable Compliance Check
+
+# Organisation-level reusable compliance workflow.
+# Repositories call this with:
+#   jobs:
+#     compliance:
+#       uses: Via-Vitae/.github/.github/workflows/reusable-compliance.yml@main
+#
+# Checks: secrets (Gitleaks), licences (allow-list), governance (file presence),
+# action-pinning (SHA enforcement), plus an aggregate compliance-status job.
+#
+# Callers may override ALLOWED_LICENCES and FORBIDDEN_LICENCES via inputs.
+
+on:
+  workflow_call:
+    inputs:
+      allowed-licences:
+        description: "Space-separated allow-list of licences"
+        type: string
+        required: false
+        default: "MIT Apache-2.0 BSD-2-Clause BSD-3-Clause 0BSD ISC CC0-1.0 Unlicense Python-2.0 Proprietary"
+      forbidden-licences:
+        description: "Space-separated deny-list of licences"
+        type: string
+        required: false
+        default: "GPL-2.0 GPL-3.0 AGPL-3.0 LGPL-2.1 LGPL-3.0 MPL-2.0 EPL-1.0 EPL-2.0 CDDL-1.0 SSPL-1.0 BUSL-1.1"
+      python-version:
+        description: "Python version for licence resolution"
+        type: string
+        required: false
+        default: "3.12"
+      node-version:
+        description: "Node.js version for licence resolution"
+        type: string
+        required: false
+        default: "22"
+    outputs:
+      compliance-status:
+        description: "Aggregate compliance result (pass/fail)"
+        value: ${{ jobs.compliance-status.outputs.result }}
+
+permissions:
+  contents: read
+
+env:
+  ALLOWED_LICENCES: ${{ inputs.allowed-licences }}
+  FORBIDDEN_LICENCES: ${{ inputs.forbidden-licences }}
+  PYTHON_VERSION: ${{ inputs.python-version }}
+  NODE_VERSION: ${{ inputs.node-version }}
+
+jobs:
+  secrets:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          GL_VERSION="8.21.2"
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VERSION}/gitleaks_${GL_VERSION}_linux_x64.tar.gz" | sudo tar xz -C /usr/local/bin
+          gitleaks version
+
+      - name: Gitleaks (full history)
+        run: |
+          set -euo pipefail
+          gitleaks detect --source . --verbose --redact --exit-code 1 || {
+            echo "::error::Gitleaks reported a finding or could not run."
+            exit 1
+          }
+
+  licences:
+    name: Licence compliance
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Detect manifests
+        id: manifests
+        run: |
+          set -euo pipefail
+          python_manifests=0; node_manifests=0
+          if [ -f pyproject.toml ] || compgen -G "requirements*.txt" >/dev/null; then
+            python_manifests=1
+          fi
+          [ -f package-lock.json ] && node_manifests=1
+          echo "python=$python_manifests" >> "$GITHUB_OUTPUT"
+          echo "node=$node_manifests"     >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        if: steps.manifests.outputs.node == '1'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies for licence resolution
+        if: steps.manifests.outputs.python == '1' || steps.manifests.outputs.node == '1'
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install pip-licenses
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; fi
+
+      - name: Python licence report
+        if: steps.manifests.outputs.python == '1'
+        run: |
+          set -uo pipefail
+          pip-licenses --format=json --with-urls > python-licences.json
+          python - <<'PY'
+          import json, os, sys
+          allowed = set(os.environ["ALLOWED_LICENCES"].split())
+          forbidden = set(os.environ["FORBIDDEN_LICENCES"].split())
+          rows = json.load(open("python-licences.json"))
+          bad = []
+          for r in rows:
+              lic = (r.get("License") or "").strip()
+              if not lic or lic in ("UNKNOWN", "(unknown license)"):
+                  continue
+              tokens = lic.replace("/", " ").replace(",", " ").replace(" or ", " ").split()
+              if any(t.strip("()") in forbidden for t in tokens):
+                  bad.append(f"{r.get('Name','?')}=={r.get('Version','?')}: FORBIDDEN '{lic}'")
+          if bad:
+              for b in bad: print(f"::error::{b}")
+              sys.exit(1)
+          print(f"scanned {len(rows)} Python packages — all clear")
+          PY
+
+      - name: Node licence report
+        if: steps.manifests.outputs.node == '1'
+        run: |
+          set -uo pipefail
+          npx --yes license-checker-rseidelsohn --production --json > node-licences.json
+          node - <<'JS'
+          const fs = require("fs");
+          const allowed = new Set(process.env.ALLOWED_LICENCES.split(/\s+/));
+          const forbidden = new Set(process.env.FORBIDDEN_LICENCES.split(/\s+/));
+          const report = JSON.parse(fs.readFileSync("node-licences.json", "utf8"));
+          const bad = [];
+          for (const [pkg, meta] of Object.entries(report)) {
+            const lic = String(meta.licenses || "").trim();
+            if (!lic || /unknown|custom/i.test(lic)) continue;
+            const tokens = lic.split(/[\s,/()]+| OR | AND /).filter(Boolean);
+            if (tokens.some((t) => forbidden.has(t))) {
+              bad.push(`${pkg}: FORBIDDEN '${lic}'`);
+            }
+          }
+          if (bad.length) { bad.forEach(b => console.log(`::error::${b}`)); process.exit(1); }
+          console.log(`scanned ${Object.keys(report).length} npm packages — all clear`);
+          JS
+
+  governance:
+    name: Governance files
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Verify governance files
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in CODEOWNERS .editorconfig .gitignore; do
+            if [ -f "$f" ] || [ -f ".github/$f" ]; then
+              echo "  ✓ $f"
+            else
+              echo "  ✗ $f MISSING"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::$missing governance file(s) missing."
+            exit 1
+          fi
+
+  action-pinning:
+    name: Action SHA pinning
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Verify all actions are pinned to full SHA
+        run: |
+          set -euo pipefail
+          unpin=0
+          while IFS= read -r wf; do
+            while IFS= read -r line; do
+              if echo "$line" | grep -qE 'uses:.*@v[0-9]'; then
+                echo "  ✗ $wf: $line"
+                unpin=$((unpin + 1))
+              fi
+            done < <(grep -E '^\s+uses:' "$wf" || true)
+          done < <(find .github/workflows -name '*.yml' -o -name '*.yaml' 2>/dev/null || true)
+          if [ "$unpin" -ne 0 ]; then
+            echo "::error::$unpin action reference(s) use tags instead of commit SHAs."
+            exit 1
+          fi
+          echo "All action references are pinned to commit SHAs."
+
+  compliance-status:
+    name: Compliance status
+    needs: [secrets, licences, governance, action-pinning]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      result: ${{ steps.eval.outputs.result }}
+    steps:
+      - name: Evaluate required gates
+        id: eval
+        run: |
+          set -euo pipefail
+          results='${{ toJSON(needs) }}'
+          failed=$(printf '%s' "$results" | grep -o '"result":"failure"' | wc -l || true)
+          cancelled=$(printf '%s' "$results" | grep -o '"result":"cancelled"' | wc -l || true)
+          printf '%s' "$results" | grep -o '"[a-z-]*":{"result":"[a-z]*"' || true
+          if [ "$failed" -ne 0 ] || [ "$cancelled" -ne 0 ]; then
+            echo "result=fail" >> "$GITHUB_OUTPUT"
+            echo "::error::Compliance failed: ${failed} job(s) failed, ${cancelled} cancelled."
+            exit 1
+          fi
+          echo "result=pass" >> "$GITHUB_OUTPUT"
+          echo "All compliance gates passed."

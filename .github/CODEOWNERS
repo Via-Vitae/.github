@@ -1,0 +1,10 @@
+# Org-level code owners for the .github repository.
+# Every change to org defaults requires architect approval.
+
+*                           @Via-Vitae/architects
+.github/workflows/          @Via-Vitae/architects
+profile/                    @Via-Vitae/architects
+CODE_OF_CONDUCT.md          @Via-Vitae/architects
+CONTRIBUTING.md             @Via-Vitae/architects
+SECURITY.md                 @Via-Vitae/architects @Via-Vitae/security
+SUPPORT.md                  @Via-Vitae/architects

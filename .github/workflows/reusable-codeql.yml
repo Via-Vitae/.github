@@ -1,0 +1,63 @@
+name: Reusable CodeQL
+
+# Organisation-level reusable CodeQL workflow.
+# Repositories call this with:
+#   jobs:
+#     codeql:
+#       uses: Via-Vitae/.github/.github/workflows/reusable-codeql.yml@main
+#       with:
+#         languages: "python,javascript-typescript"
+
+on:
+  workflow_call:
+    inputs:
+      languages:
+        description: "Comma-separated CodeQL languages to analyse"
+        type: string
+        required: false
+        default: "python,javascript-typescript"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(format('[{0}]', inputs.languages)) }}
+        build-mode: ["none"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@5ba2889ada762081db2c4f32a729827dce632c7b
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-and-quality
+          sarif-add-snippets: true
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@5ba2889ada762081db2c4f32a729827dce632c7b
+        with:
+          category: "/language:${{ matrix.language }}/build-mode:${{ matrix.build-mode }}"
+          upload: always
+          output: sarif-results
+
+      - name: Upload SARIF artefact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: codeql-sarif-${{ matrix.language }}
+          path: sarif-results/
+          if-no-files-found: ignore
+          retention-days: 30

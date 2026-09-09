@@ -1,0 +1,18 @@
+# Dependabot configuration for the .github organisation-defaults repository.
+# Individual repositories maintain their own dependabot.yml via viavitae-template.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/Vilnius"
+    reviewers:
+      - "Via-Vitae/architects"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
