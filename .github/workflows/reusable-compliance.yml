@@ -228,14 +228,18 @@ jobs:
         id: eval
         run: |
           set -euo pipefail
-          results='${{ toJSON(needs) }}'
-          failed=$(printf '%s' "$results" | grep -o '"result":"failure"' | wc -l || true)
-          cancelled=$(printf '%s' "$results" | grep -o '"result":"cancelled"' | wc -l || true)
-          printf '%s' "$results" | grep -o '"[a-z-]*":{"result":"[a-z]*"' || true
-          if [ "$failed" -ne 0 ] || [ "$cancelled" -ne 0 ]; then
+          # The verdict is computed by the expression engine from the needs
+          # context, then passed in as an env var. Do NOT grep toJSON(needs):
+          # if the serialised JSON carries a space after the colon the pattern
+          # matches nothing and this gate passes over failing jobs (seen on
+          # viavitae-web PR #32: Lint + Unit failed, CI status reported success).
+          printf '%s\n' '${{ toJSON(needs) }}'
+          if [[ "${{ env.GATE_BAD }}" == "true" ]]; then
             echo "result=fail" >> "$GITHUB_OUTPUT"
-            echo "::error::Compliance failed: ${failed} job(s) failed, ${cancelled} cancelled."
+            echo "::error::A required compliance gate failed or was cancelled."
             exit 1
           fi
           echo "result=pass" >> "$GITHUB_OUTPUT"
-          echo "All compliance gates passed."
+          echo "All compliance gates passed or were legitimately skipped."
+        env:
+          GATE_BAD: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
