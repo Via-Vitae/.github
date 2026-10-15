@@ -30,6 +30,6 @@ communities, charities and mission-driven organisations across Europe.
 
 | Role | Contact |
 | --- | --- |
-| Security | `security@viavitae.com` |
-| Data Protection | `dpo@viavitae.com` |
-| Legal | `legal@viavitae.com` |
+| Security | `journey4oflife+viavitae.security@gmail.com` |
+| Data Protection | `journey4oflife+viavitae.privacy@gmail.com` |
+| Legal | `journey4oflife+viavitae.billing@gmail.com` |

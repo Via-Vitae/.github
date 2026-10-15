@@ -6,9 +6,9 @@
 | --- | --- |
 | **GitHub Issues** | Bug reports and feature requests in the relevant repository |
 | **GitHub Discussions** | Questions, ideas, and general discussion |
-| `security@viavitae.com` | Security vulnerabilities — **never** use public issues |
-| `dpo@viavitae.com` | Data protection, privacy, and GDPR questions |
-| `legal@viavitae.com` | Licensing, legal, and compliance questions |
+| `journey4oflife+viavitae.security@gmail.com` | Security vulnerabilities — **never** use public issues |
+| `journey4oflife+viavitae.privacy@gmail.com` | Data protection, privacy, and GDPR questions |
+| `journey4oflife+viavitae.billing@gmail.com` | Licensing, legal, and compliance questions |
 
 ## Before asking
 

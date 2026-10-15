@@ -45,7 +45,7 @@ an individual is officially representing the community in public spaces.
 
 Instances of abusive, harassing, or otherwise unacceptable behaviour may be
 reported to the community leaders responsible for enforcement at
-`legal@viavitae.com`. All complaints will be reviewed and investigated promptly
+`journey4oflife+viavitae.billing@gmail.com`. All complaints will be reviewed and investigated promptly
 and fairly.
 
 ## Attribution
